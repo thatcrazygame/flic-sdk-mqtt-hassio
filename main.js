@@ -114,9 +114,9 @@ mqtt.on("disconnected", function() {
 });
 
 mqtt.on("error", function() {
-  setTimeout(function (){
-    mqtt.connect();
-  }, 1000);
+	setTimeout(function (){
+		mqtt.connect();
+	}, 1000);
 });
 
 mqtt.on("connected", function() {
@@ -125,16 +125,16 @@ mqtt.on("connected", function() {
 });
 
 mqtt.on("publish", function(pub) {
-		// HA publishes a message when it (re)connects to the MQTT broker
-		// Republish triggers when that happens even though they'll be 
-		// republished every 10 seconds (below)
-		// Might not be needed since the configs are published with retain
-		if (pub.topic == HASSIO_STATUS && pub.message == "online") {
-			var buttons = buttonManager.getButtons();
-			for (var i = 0; i < buttons.length; i++) {
-				publishButtonTriggers(buttons[i]);
-			}	
-		}
+	// HA publishes a message when it (re)connects to the MQTT broker
+	// Republish triggers when that happens even though they'll be 
+	// republished every 10 seconds (below)
+	// Might not be needed since the configs are published with retain
+	if (pub.topic == HASSIO_STATUS && pub.message == "online") {
+		var buttons = buttonManager.getButtons();
+		for (var i = 0; i < buttons.length; i++) {
+			publishButtonTriggers(buttons[i]);
+		}	
+	}
 });
 
 mqtt.connect();
