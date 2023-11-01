@@ -47,11 +47,19 @@ function publishButtonTriggers(button) {
 		button.uuid
 	];
 	device.manufacturer = "Shortcut Labs AB";
-	device.model = "Flic " + button.flicVersion;
+
+	var flic_or_twist = "Flic";
+	if (button.flicVersion == 3) {
+		flic_or_twist = "Twist";
+		device.model = "Twist";
+	} else {
+		device.model = "Flic " + button.flicVersion;
+	}
+	
 	if (button.name == null || button.name == "") {
 		device.name = object_id;
 	} else {
-		device.name = button.name + " - Flic";
+		device.name = button.name + " - " + flic_or_twist;
 	}
 	device.sw_version = button.firmwareVersion;
 	device.via_device = HUB;
@@ -69,9 +77,11 @@ function publishButtonTriggers(button) {
 		//var icon = CLICKTYPES[i][1];		
 		//config.icon = icon;
 
-		mqtt.publish(HASSIO_DISCOVERY + object_id + "/" + clickType + "/config"
-								 , JSON.stringify(config)
-								 , {retain: true});
+		if (clickType == "click" || clickType == "double_click" || (clickType == "hold" && flic_or_twist != "Twist")) {
+			mqtt.publish(HASSIO_DISCOVERY + object_id + "/" + clickType + "/config"
+									 , JSON.stringify(config)
+									 , {retain: true});			
+		}
 	}
 }
 
@@ -138,6 +148,8 @@ mqtt.on("publish", function(pub) {
 });
 
 mqtt.connect();
+
+
 
 // Contiuously update because the buttonReady and buttonUpdated
 // events don't wait for the button name to be entered, and don't
