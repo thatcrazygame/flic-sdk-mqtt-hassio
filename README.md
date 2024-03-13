@@ -16,10 +16,8 @@ Makes Flic buttons discoverable through Home Assistant MQTT. Useful as an altern
       "server": "xxx.xxx.xxx.xxx",
       "username": "xxxxx",
       "password": "xxxxxxxx",
-      "hub": "xxxxxxxx",
     }
    ```
    - The server, username, and password are for your MQTT broker
-   - hub is mostly unused. I just copied the hub's serial from the top left of the Hub SDK editor
 6. Copy/Paste the code from main.js in this repository to your module's main.js
 7. With your module selected, check "Restart After Crash." Then click the green play button to run the module
