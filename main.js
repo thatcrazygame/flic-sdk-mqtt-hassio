@@ -3,7 +3,6 @@ exports.config = {
 	"server": "xxx.xxx.xxx.xxx",
 	"username": "xxxxx",
 	"password": "xxxxxxxx",
-	"hub": "xxxxxxxx",
 }
 *** config.js ***/
 // The SDK doesn't seem to support require for json files
@@ -13,7 +12,8 @@ var USERNAME = config.username;
 var PASSWORD = config.password;
 // Placholder for the via_device config in case there's a way and/or 
 // reason to turn the hub itself into an MQTT device in HA
-var HUB = config.hub;
+var HUB = require("hubinfo").serialNumber.toLowerCase();
+
 
 var mqtt = require("./mqtt").create(SERVER, {username: USERNAME, password: PASSWORD});
 
@@ -97,7 +97,7 @@ function deleteButtonTriggers(bdaddr) {
 	for (var i = 0; i < CLICKTYPES.length; i++) {
 		var clickType = CLICKTYPES[i][0];
 		// empty config deletes the device/trigger in HA
-		mqtt.publish(HASSIO_DISCOVERY + object_id + "/" + clickType + "/config", "{}");
+		mqtt.publish(HASSIO_DISCOVERY + object_id + "/" + clickType + "/config", "", {retain: true});
 	}
 }
 
