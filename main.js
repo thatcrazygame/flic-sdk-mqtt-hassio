@@ -12,12 +12,13 @@ var USERNAME = config.username;
 var PASSWORD = config.password;
 // Placholder for the via_device config in case there's a way and/or 
 // reason to turn the hub itself into an MQTT device in HA
-var HUB = require("hubinfo").serialNumber.toLowerCase();
+var HUB = require("hubinfo");
+var SERIAL = HUB.serialNumber.toLowerCase();
 
 
 var mqtt = require("./mqtt").create(SERVER, {username: USERNAME, password: PASSWORD});
 
-var HASSIO_DISCOVERY = 'homeassistant/device_automation/';
+var HASSIO_DISCOVERY = "homeassistant/device_automation/";
 var HASSIO_STATUS = "homeassistant/status"
 // [<type>,<icon>]
 // icons for possibly setting up HA entities, not currently used
@@ -26,6 +27,26 @@ var CLICKTYPES = [
 	["double_click", "mdi:gesture-double-tap"],
 	["hold", "mdi:gesture-tap-hold"]
 ];
+
+function publishHubConfig() {
+	var device = {};
+	device.sw_version = HUB.firmwareVersion;
+	device.identifiers = [SERIAL];
+	device.manufacturer = "Shortcut Labs AB";
+	device.model = "Flic Hub LR";
+	device.name = "Flic Hub LR";
+	
+	var config = {};
+	config.unique_id = "flichub_" + SERIAL + "_firmware";
+	config.object_id = config.unique_id;
+	config.name = "Firmware Version";
+	config.device = device;
+	config.state_topic = "flichub/" + SERIAL + "/firmware";
+	
+	mqtt.publish("homeassistant/sensor/flichub_" + SERIAL + "/config"
+				, JSON.stringify(config)
+				, {retain: true});	
+}
 
 var buttonManager = require("buttons");
 
@@ -62,7 +83,7 @@ function publishButtonTriggers(button) {
 		device.name = button.name + " - " + flic_or_twist;
 	}
 	device.sw_version = button.firmwareVersion;
-	device.via_device = HUB;
+	device.via_device = SERIAL;
 
 	for (var i = 0; i < CLICKTYPES.length; i++) {
 		var clickType = CLICKTYPES[i][0];
@@ -90,6 +111,12 @@ function publishAllButtonTriggers() {
 	for (var i = 0; i < buttons.length; i++) {
 		publishButtonTriggers(buttons[i]);
 	}	
+}
+
+function updateAll() {
+	publishAllButtonTriggers();
+	publishHubConfig();
+	mqtt.publish("flichub/" + SERIAL + "/firmware", HUB.firmwareVersion, {retain: false});
 }
 
 function deleteButtonTriggers(bdaddr) {
@@ -131,7 +158,7 @@ mqtt.on("error", function() {
 
 mqtt.on("connected", function() {
 	mqtt.subscribe(HASSIO_STATUS);
-	publishAllButtonTriggers();
+	updateAll();
 });
 
 mqtt.on("publish", function(pub) {
@@ -154,4 +181,4 @@ mqtt.connect();
 // Contiuously update because the buttonReady and buttonUpdated
 // events don't wait for the button name to be entered, and don't
 // trigger when it is entered or changed.
-setInterval(publishAllButtonTriggers, 10000);
+setInterval(updateAll, 10000);
