@@ -5,50 +5,65 @@ exports.config = {
 	"password": "xxxxxxxx",
 }
 *** config.js ***/
-// The SDK doesn't seem to support require for json files
-var config = require("./config").config;
-var SERVER = config.server;
-var USERNAME = config.username;
-var PASSWORD = config.password;
-// Placholder for the via_device config in case there's a way and/or 
-// reason to turn the hub itself into an MQTT device in HA
-var HUB = require("hubinfo");
-var SERIAL = HUB.serialNumber.toLowerCase();
-
-
-var mqtt = require("./mqtt").create(SERVER, {username: USERNAME, password: PASSWORD});
-
-var HASSIO_DISCOVERY = "homeassistant/device_automation/";
-var HASSIO_STATUS = "homeassistant/status"
+// Configs
+const CONFIG = require("./config").config; // The SDK doesn't seem to support require for json files
+const SERVER = CONFIG.server;
+const USERNAME = CONFIG.username;
+const PASSWORD = CONFIG.password;
+// Requires
+const MQTT = require("./mqtt").create(SERVER, {username: USERNAME, password: PASSWORD});
+const HUB = require("hubinfo");
+const BUTTON_MANAGER = require("buttons");
+// Device info
+const SERIAL = HUB.serialNumber.toLowerCase();
+const HUB_MODEL = "Flic Hub LR";
+const FLICHUB = "flichub";
+const MANUFACTURER = "Shortcut Labs AB";
+const FLIC = "Flic";
+const TWIST = "Twist"
+// MQTT Topics
+const HASS = "homeassistant";
+const DEVICE_AUTOMATION = `${HASS}/device_automation`;
+const SENSOR = `${HASS}/sensor`;
+const HASSIO_STATUS = `${HASS}/status`;
+const CONF = "config";
+const CLICK_TYPE = "clickType";
+const FIRMWARE = "firmware";
+// Actions
+const CLICK = "click";
+const DOUBLE_CLICK = "double_click";
+const HOLD = "hold";
+const UP = "up";
+const DOWN = "down";
 // [<type>,<icon>]
 // icons for possibly setting up HA entities, not currently used
-var CLICKTYPES = [
-	["click","mdi:gesture-tap"],
-	["double_click", "mdi:gesture-double-tap"],
-	["hold", "mdi:gesture-tap-hold"]
+const CLICKTYPES = [
+	[CLICK,"mdi:gesture-tap"],
+	[DOUBLE_CLICK, "mdi:gesture-double-tap"],
+	[HOLD, "mdi:gesture-tap-hold"],
+	[UP, "mdi:arrow-collapse-up"],
+	[DOWN, "mdi:arrow-collapse-down"]
 ];
 
+
 function publishHubConfig() {
-	var device = {};
+	let device = {};
 	device.sw_version = HUB.firmwareVersion;
 	device.identifiers = [SERIAL];
-	device.manufacturer = "Shortcut Labs AB";
-	device.model = "Flic Hub LR";
-	device.name = "Flic Hub LR";
+	device.manufacturer = MANUFACTURER;
+	device.model = HUB_MODEL;
+	device.name = HUB_MODEL;
 	
-	var config = {};
-	config.unique_id = "flichub_" + SERIAL + "_firmware";
+	let config = {};
+	config.unique_id = `${FLICHUB}_${SERIAL}_${FIRMWARE}`;
 	config.object_id = config.unique_id;
 	config.name = "Firmware Version";
 	config.device = device;
-	config.state_topic = "flichub/" + SERIAL + "/firmware";
+	config.state_topic = `${FLICHUB}/${SERIAL}/${FIRMWARE}`;
 	
-	mqtt.publish("homeassistant/sensor/flichub_" + SERIAL + "/config"
-				, JSON.stringify(config)
-				, {retain: true});	
+	let topic = `${SENSOR}/${FLICHUB}_${SERIAL}/${CONF}`;
+	MQTT.publish(topic, JSON.stringify(config), {retain: true});	
 }
-
-var buttonManager = require("buttons");
 
 function getObjectID(bdaddr) {
 	// When a button is deleted, only the bdaddr is provided
@@ -57,9 +72,9 @@ function getObjectID(bdaddr) {
 }
  
 function publishButtonTriggers(button) {
-	var object_id = getObjectID(button.bdaddr);
+	let object_id = getObjectID(button.bdaddr);
 
-	var device = {};
+	let device = {};
 	device.connections = [["mac", button.bdaddr]];
 	device.hw_version = button.flicVersion;
 	device.identifiers = [
@@ -67,48 +82,44 @@ function publishButtonTriggers(button) {
 		button.serialNumber,
 		button.uuid
 	];
-	device.manufacturer = "Shortcut Labs AB";
+	device.manufacturer = MANUFACTURER;
 
-	var flic_or_twist = "Flic";
+	let device_type = FLIC;
 	if (button.flicVersion == 3) {
-		flic_or_twist = "Twist";
-		device.model = "Twist";
+		device_type = TWIST;
+		device.model = TWIST;
 	} else {
-		device.model = "Flic " + button.flicVersion;
+		device.model = FLIC + " " + button.flicVersion;
 	}
 	
 	if (button.name == null || button.name == "") {
 		device.name = object_id;
 	} else {
-		device.name = button.name + " - " + flic_or_twist;
+		device.name = button.name + " - " + device_type;
 	}
 	device.sw_version = button.firmwareVersion;
 	device.via_device = SERIAL;
 
-	for (var i = 0; i < CLICKTYPES.length; i++) {
-		var clickType = CLICKTYPES[i][0];
-		var config = {};
+	for (let i = 0; i < CLICKTYPES.length; i++) {
+		let clickType = CLICKTYPES[i][0];
+		let config = {};
 		config.automation_type = "trigger";
 		config.type = "action";
 		config.subtype = clickType;
 		config.payload = clickType;
-		config.topic = HASSIO_DISCOVERY + object_id + "/clickType";
+		config.topic = `${DEVICE_AUTOMATION}/${object_id}/${CLICK_TYPE}`;
 		config.device = device;
 		
-		//var icon = CLICKTYPES[i][1];		
-		//config.icon = icon;
-
-		if (clickType == "click" || clickType == "double_click" || (clickType == "hold" && flic_or_twist != "Twist")) {
-			mqtt.publish(HASSIO_DISCOVERY + object_id + "/" + clickType + "/config"
-									 , JSON.stringify(config)
-									 , {retain: true});			
+		if (device_type == FLIC || (device_type == TWIST && clickType != HOLD)) {
+			let topic = `${DEVICE_AUTOMATION}/${object_id}/${clickType}/${CONF}`;
+			MQTT.publish(topic, JSON.stringify(config), {retain: true});			
 		}
 	}
 }
 
 function publishAllButtonTriggers() {
-	var buttons = buttonManager.getButtons();
-	for (var i = 0; i < buttons.length; i++) {
+	let buttons = BUTTON_MANAGER.getButtons();
+	for (let i = 0; i < buttons.length; i++) {
 		publishButtonTriggers(buttons[i]);
 	}	
 }
@@ -116,67 +127,78 @@ function publishAllButtonTriggers() {
 function updateAll() {
 	publishAllButtonTriggers();
 	publishHubConfig();
-	mqtt.publish("flichub/" + SERIAL + "/firmware", HUB.firmwareVersion, {retain: false});
+	MQTT.publish(`${FLICHUB}/${SERIAL}/${FIRMWARE}`, HUB.firmwareVersion, {retain: false});
 }
 
 function deleteButtonTriggers(bdaddr) {
-	var object_id = getObjectID(bdaddr);
-	for (var i = 0; i < CLICKTYPES.length; i++) {
-		var clickType = CLICKTYPES[i][0];
+	let object_id = getObjectID(bdaddr);
+	for (let i = 0; i < CLICKTYPES.length; i++) {
+		let clickType = CLICKTYPES[i][0];
 		// empty config deletes the device/trigger in HA
-		mqtt.publish(HASSIO_DISCOVERY + object_id + "/" + clickType + "/config", "", {retain: true});
+		let topic = `${DEVICE_AUTOMATION}/${object_id}/${clickType}/${CONF}`;
+		MQTT.publish(topic, "", {retain: true});
 	}
 }
 
-buttonManager.on("buttonSingleOrDoubleClickOrHold", function(obj) {
-	var object_id = getObjectID(obj.bdaddr);
-	var clickType = obj.isSingleClick ? "click" : obj.isDoubleClick ? "double_click" : "hold";
-	mqtt.publish(HASSIO_DISCOVERY + object_id + "/clickType", clickType);
+BUTTON_MANAGER.on("buttonSingleOrDoubleClickOrHold", function(obj) {
+	let object_id = getObjectID(obj.bdaddr);
+	let clickType = obj.isSingleClick ? CLICK : obj.isDoubleClick ? DOUBLE_CLICK : HOLD;
+	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${CLICK_TYPE}`, clickType);
 });
 
-buttonManager.on("buttonReady", function(obj) {
+BUTTON_MANAGER.on("buttonDown", function(obj) {
+	let object_id = getObjectID(obj.bdaddr);
+	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${CLICK_TYPE}`, DOWN);
+});
+
+BUTTON_MANAGER.on("buttonUp", function(obj) {
+	let object_id = getObjectID(obj.bdaddr);
+	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${CLICK_TYPE}`, UP);
+});
+
+BUTTON_MANAGER.on("buttonReady", function(obj) {
 	console.log("ready");
-	var button = buttonManager.getButton(obj.bdaddr);
+	let button = BUTTON_MANAGER.getButton(obj.bdaddr);
 	publishButtonTriggers(button);
 });
 
-buttonManager.on("buttonDeleted", function(obj) {
+BUTTON_MANAGER.on("buttonDeleted", function(obj) {
 	console.log("delete");
 	deleteButtonTriggers(obj.bdaddr); 
 });
 
-
-mqtt.on("disconnected", function() {
-	mqtt.connect();
+MQTT.on("disconnected", function() {
+	console.log("disconnected");
+	MQTT.connect();
 });
 
-mqtt.on("error", function() {
+MQTT.on("error", function(message) {
+	console.log("error: " + message);
 	setTimeout(function (){
-		mqtt.connect();
+		console.log("Attempt to reconnect");
+		MQTT.connect();
 	}, 1000);
 });
 
-mqtt.on("connected", function() {
-	mqtt.subscribe(HASSIO_STATUS);
+MQTT.on("connected", function() {
+	MQTT.subscribe(HASSIO_STATUS);
 	updateAll();
 });
 
-mqtt.on("publish", function(pub) {
+MQTT.on("publish", function(pub) {
 	// HA publishes a message when it (re)connects to the MQTT broker
 	// Republish triggers when that happens even though they'll be 
 	// republished every 10 seconds (below)
 	// Might not be needed since the configs are published with retain
 	if (pub.topic == HASSIO_STATUS && pub.message == "online") {
-		var buttons = buttonManager.getButtons();
-		for (var i = 0; i < buttons.length; i++) {
+		let buttons = BUTTON_MANAGER.getButtons();
+		for (let i = 0; i < buttons.length; i++) {
 			publishButtonTriggers(buttons[i]);
 		}	
 	}
 });
 
-mqtt.connect();
-
-
+MQTT.connect();
 
 // Contiuously update because the buttonReady and buttonUpdated
 // events don't wait for the button name to be entered, and don't
