@@ -10,6 +10,8 @@ const CONFIG = require("./config").config; // The SDK doesn't seem to support re
 const SERVER = CONFIG.server;
 const USERNAME = CONFIG.username;
 const PASSWORD = CONFIG.password;
+const HATOKEN = CONFIG.HATOKEN;
+const FW_INTERVAL = 30000;
 // Requires
 const MQTT = require("./mqtt").create(SERVER, {username: USERNAME, password: PASSWORD});
 const HUB = require("hubinfo");
@@ -29,6 +31,7 @@ const HASSIO_STATUS = `${HASS}/status`;
 const CONF = "config";
 const CLICK_TYPE = "clickType";
 const FIRMWARE = "firmware";
+const DELETE_MSG = "";
 // Actions
 const CLICK = "click";
 const DOUBLE_CLICK = "double_click";
@@ -93,9 +96,9 @@ function publishButtonTriggers(button) {
 	}
 	
 	if (button.name == null || button.name == "") {
-		device.name = object_id;
+		device.name = `${object_id} - ${device_type}`;
 	} else {
-		device.name = button.name + " - " + device_type;
+		device.name = `${button.name} - ${device_type}`;
 	}
 	device.sw_version = button.firmwareVersion;
 	device.via_device = SERIAL;
@@ -124,12 +127,6 @@ function publishAllButtonTriggers() {
 	}	
 }
 
-function updateAll() {
-	publishAllButtonTriggers();
-	publishHubConfig();
-	MQTT.publish(`${FLICHUB}/${SERIAL}/${FIRMWARE}`, HUB.firmwareVersion, {retain: false});
-}
-
 function deleteButtonTriggers(bdaddr) {
 	let object_id = getObjectID(bdaddr);
 	for (let i = 0; i < CLICKTYPES.length; i++) {
@@ -138,6 +135,16 @@ function deleteButtonTriggers(bdaddr) {
 		let topic = `${DEVICE_AUTOMATION}/${object_id}/${clickType}/${CONF}`;
 		MQTT.publish(topic, "", {retain: true});
 	}
+}
+
+function publishHubFirmware() {
+	MQTT.publish(`${FLICHUB}/${SERIAL}/${FIRMWARE}`, HUB.firmwareVersion, {retain: false});
+}
+
+function updateAll() {
+	publishAllButtonTriggers();
+	publishHubConfig();
+	publishHubFirmware();
 }
 
 BUTTON_MANAGER.on("buttonSingleOrDoubleClickOrHold", function(obj) {
@@ -160,6 +167,14 @@ BUTTON_MANAGER.on("buttonReady", function(obj) {
 	console.log("ready");
 	let button = BUTTON_MANAGER.getButton(obj.bdaddr);
 	publishButtonTriggers(button);
+});
+
+BUTTON_MANAGER.on("buttonUpdated", function(obj) {
+	console.log("updated");
+	let button = BUTTON_MANAGER.getButton(obj.bdaddr);
+	if (button.name != null && button.name != "") {
+		publishButtonTriggers(button);
+	}
 });
 
 BUTTON_MANAGER.on("buttonDeleted", function(obj) {
@@ -187,20 +202,11 @@ MQTT.on("connected", function() {
 
 MQTT.on("publish", function(pub) {
 	// HA publishes a message when it (re)connects to the MQTT broker
-	// Republish triggers when that happens even though they'll be 
-	// republished every 10 seconds (below)
-	// Might not be needed since the configs are published with retain
 	if (pub.topic == HASSIO_STATUS && pub.message == "online") {
-		let buttons = BUTTON_MANAGER.getButtons();
-		for (let i = 0; i < buttons.length; i++) {
-			publishButtonTriggers(buttons[i]);
-		}	
+		updateAll();
 	}
 });
 
 MQTT.connect();
 
-// Contiuously update because the buttonReady and buttonUpdated
-// events don't wait for the button name to be entered, and don't
-// trigger when it is entered or changed.
-setInterval(updateAll, 10000);
+setInterval(publishHubFirmware, FW_INTERVAL);
