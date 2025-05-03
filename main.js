@@ -130,9 +130,8 @@ function deleteButtonTriggers(bdaddr) {
 	let object_id = getObjectID(bdaddr);
 	for (let i = 0; i < CLICKTYPES.length; i++) {
 		let clickType = CLICKTYPES[i][0];
-		// empty config deletes the device/trigger in HA
 		let topic = `${DEVICE_AUTOMATION}/${object_id}/${clickType}/${CONF}`;
-		MQTT.publish(topic, "", {retain: true});
+		MQTT.publish(topic, DELETE_MSG, {retain: true});
 	}
 }
 
