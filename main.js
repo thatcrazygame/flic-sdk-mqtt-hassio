@@ -10,7 +10,6 @@ const CONFIG = require("./config").config; // The SDK doesn't seem to support re
 const SERVER = CONFIG.server;
 const USERNAME = CONFIG.username;
 const PASSWORD = CONFIG.password;
-const HATOKEN = CONFIG.HATOKEN;
 const FW_INTERVAL = 30000;
 // Requires
 const MQTT = require("./mqtt").create(SERVER, {username: USERNAME, password: PASSWORD});
