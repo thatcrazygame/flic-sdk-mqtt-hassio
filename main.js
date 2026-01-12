@@ -35,13 +35,19 @@ const FIRMWARE = "firmware";
 const DELETE_MSG = "";
 const VD_UPDATE = "virtualDeviceUpdate";
 const VD_STATE = `${VD_UPDATE}/state`;
+const BIG = "big";
+const SMALL = "small";
+const DUO_SIZE = [BIG, SMALL];
 // Actions
 const CLICK = "click";
 const DOUBLE_CLICK = "double_click";
 const HOLD = "hold";
 const UP = "up";
 const DOWN = "down";
-const MESSAGE = "message";
+const G_UP = "gesture_up";
+const G_DOWN = "gesture_down";
+const G_LEFT = "gesture_left";
+const G_RIGHT = "gesture_right";
 const ACTIONS = [
 	  CLICK
 	, DOUBLE_CLICK
@@ -49,6 +55,10 @@ const ACTIONS = [
 	, UP
 	, DOWN
 	, VD_UPDATE
+	, G_UP
+	, G_DOWN
+	, G_LEFT
+	, G_RIGHT
 ];
 
 
@@ -113,24 +123,54 @@ function publishButtonTriggers(button) {
 
 	for (let i = 0; i < ACTIONS.length; i++) {
 		let action = ACTIONS[i];
+		let is_gesture = action.includes("gesture");
+		let config_topic = `${DEVICE_AUTOMATION}/${object_id}/${action}/${CONF}`;
+		
 		let config = {};
 		config.automation_type = "trigger";
 		config.type = "action";
+		config.device = device;
 		config.subtype = action;
 		config.payload = action;
 		config.topic = `${DEVICE_AUTOMATION}/${object_id}/${ACTION}`;
-		config.device = device;
 		
-		if (action == VD_UPDATE || action == MESSAGE) {
+		if (action == VD_UPDATE) {
 			delete config.payload;
 			config.topic = `${DEVICE_AUTOMATION}/${object_id}/${action}`;
+			MQTT.publish(config_topic, JSON.stringify(config), {retain: true});	
+		}
+
+		if (
+			!is_gesture &&
+			action != VD_UPDATE &&
+			(
+				device_type == FLIC || 
+				(device_type == TWIST && action != HOLD)
+			)
+		) {
+			MQTT.publish(config_topic, JSON.stringify(config), {retain: true});			
 		}
 		
-		if (device_type == FLIC || (device_type == TWIST && action != HOLD) || device_type == DUO) {
-			let topic = `${DEVICE_AUTOMATION}/${object_id}/${action}/${CONF}`;
-			MQTT.publish(topic, JSON.stringify(config), {retain: true});			
+		if (device_type == DUO && action != VD_UPDATE) {
+			publishDuoVariation(object_id, config, BIG, action);
+			publishDuoVariation(object_id, config, SMALL, action);
+			if (!is_gesture) {
+				publishDuoVariation(object_id, config, BIG, `wall - ${action}`);
+				publishDuoVariation(object_id, config, SMALL, `wall - ${action}`);
+			}
 		}
+		
 	}
+}
+
+function publishDuoVariation(object_id, config, size, action) {
+	config.topic = `${DEVICE_AUTOMATION}/${object_id}/${size}/${ACTION}`;			
+	
+	let duo_action = `${size} - ${action}`
+	config.subtype = duo_action;
+	config.payload = action;
+	config_topic = `${DEVICE_AUTOMATION}/${object_id}/${duo_action.replaceAll(" ", "")}/${CONF}`;
+	MQTT.publish(config_topic, JSON.stringify(config), {retain: true});
 }
 
 function publishAllButtonTriggers() {
@@ -159,20 +199,35 @@ function updateAll() {
 	publishHubFirmware();
 }
 
-BUTTON_MANAGER.on("buttonSingleOrDoubleClickOrHold", function(obj) {
+function handleAction(obj, action) {
 	let object_id = getObjectID(obj.bdaddr);
+	//console.log(JSON.stringify(obj));
+	
+	let topic = `${DEVICE_AUTOMATION}/${object_id}/${ACTION}`;
+	
+	if (Object.hasOwn(obj, "gesture") && Object.hasOwn(obj, "buttonNumber")) {
+		let size = DUO_SIZE[obj.buttonNumber];
+		topic = `${DEVICE_AUTOMATION}/${object_id}/${size}/${ACTION}`;
+		
+		if (obj.gesture != "unrecognized" && obj.gesture != null) {
+			action = `gesture_${obj.gesture}`;
+		}
+	}
+	
+	MQTT.publish(topic, action);
+}
+
+BUTTON_MANAGER.on("buttonSingleOrDoubleClickOrHold", function(obj) {
 	let action = obj.isSingleClick ? CLICK : obj.isDoubleClick ? DOUBLE_CLICK : HOLD;
-	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${ACTION}`, action);
+	handleAction(obj, action);
 });
 
 BUTTON_MANAGER.on("buttonDown", function(obj) {
-	let object_id = getObjectID(obj.bdaddr);
-	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${ACTION}`, DOWN);
+	handleAction(obj, DOWN);
 });
 
 BUTTON_MANAGER.on("buttonUp", function(obj) {
-	let object_id = getObjectID(obj.bdaddr);
-	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${ACTION}`, UP);
+	handleAction(obj, UP);
 });
 
 FLICAPP.on("actionMessage", function(message) {
