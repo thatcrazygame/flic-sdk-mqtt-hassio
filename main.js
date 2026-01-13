@@ -61,6 +61,18 @@ const ACTIONS = [
 	, G_RIGHT
 ];
 
+const DEBUG = 100;
+const INFO = 200;
+const WARN = 300;
+const ERROR = 400;
+const CRIT = 500;
+const LOGLEVEL = ERROR;
+
+function log(message, level = LOGLEVEL) {
+	if (level >= LOGLEVEL) {
+		console.log(message);
+	}
+}
 
 function publishHubConfig() {
 	let device = {};
@@ -87,6 +99,19 @@ function getObjectID(bdaddr) {
 	// So that's what has to be used for the object_id 
 	return "flic_" + bdaddr.replace(/[:]/g,"");
 }
+
+function getDeviceType(button) {
+	let serial = button.serialNumber;
+	let device_type = "";
+	if (serial.startsWith("BF39")) {
+		device_type = FLIC;
+	} else if (serial.startsWith("CA22")) {
+		device_type = TWIST;
+	} else if (serial.startsWith("DA45")) {
+		device_type = DUO;
+	}
+	return device_type;
+}
  
 function publishButtonTriggers(button) {
 	let object_id = getObjectID(button.bdaddr);
@@ -101,16 +126,11 @@ function publishButtonTriggers(button) {
 	];
 	device.manufacturer = MANUFACTURER;
 
-	let device_type = FLIC;
-	let serial = button.serialNumber;
-	if (serial.startsWith("BF39")) {
+	let device_type = getDeviceType(button);
+	if (device_type == FLIC) {
 		device.model = FLIC + " " + button.flicVersion;
-	} else if (serial.startsWith("CA22")) {
-		device_type = TWIST;
-		device.model = TWIST;
-	} else if (serial.startsWith("DA45")) {
-		device_type = DUO;
-		device.model = DUO;
+	} else {
+		device.model = device_type;
 	}
 	
 	if (button.name == null || button.name == "") {
@@ -200,17 +220,34 @@ function updateAll() {
 }
 
 function handleAction(obj, action) {
+	let button = BUTTON_MANAGER.getButton(obj.bdaddr);
+	let device_type = getDeviceType(button);
 	let object_id = getObjectID(obj.bdaddr);
-	//console.log(JSON.stringify(obj));
+	
+	if (action != UP && action != DOWN) {
+		log(JSON.stringify(obj), INFO);	
+	}
 	
 	let topic = `${DEVICE_AUTOMATION}/${object_id}/${ACTION}`;
 	
-	if (Object.hasOwn(obj, "gesture") && Object.hasOwn(obj, "buttonNumber")) {
+	if (device_type == DUO) {
 		let size = DUO_SIZE[obj.buttonNumber];
 		topic = `${DEVICE_AUTOMATION}/${object_id}/${size}/${ACTION}`;
 		
-		if (obj.gesture != "unrecognized" && obj.gesture != null) {
+		if (obj.gesture != null && obj.gesture != "unrecognized") {
 			action = `gesture_${obj.gesture}`;
+		} else {
+			let x = obj.orientation.x;
+			let y = obj.orientation.y;
+			let z = obj.orientation.z;
+			let min = 0.96;
+			let tol = 0.2;
+			// After experimenting these seem to be the ranges for Flic's built in "on wall" events
+			// i.e. flat on wall with big button directly above small button
+			// You could define other orientations and action types
+			if (Math.abs(x) <= tol && Math.abs(z) <= tol && min <= y && y <= (1 + tol)) {
+				action = `wall - ${action}`;
+			}
 		}
 	}
 	
@@ -231,7 +268,7 @@ BUTTON_MANAGER.on("buttonUp", function(obj) {
 });
 
 FLICAPP.on("actionMessage", function(message) {
-	//console.log(message);
+	log(message, INFO);
 	let re = /^([/].+?):([^:]+?)$/;
 	let found = message.match(re);
 	if (found != null) {
@@ -248,18 +285,18 @@ FLICAPP.on(VD_UPDATE, function(metaData, values) {
 	data.meta_data = metaData;
 	data.values = values;
 	let object_id = getObjectID(metaData.buttonId);
-	// console.log(JSON.stringify(data));
+	log(JSON.stringify(data), DEBUG);
 	MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${VD_UPDATE}`, JSON.stringify(data));
 });
 
 BUTTON_MANAGER.on("buttonReady", function(obj) {
-	// console.log("ready");
+	log("ready", DEBUG);
 	let button = BUTTON_MANAGER.getButton(obj.bdaddr);
 	publishButtonTriggers(button);
 });
 
 BUTTON_MANAGER.on("buttonUpdated", function(obj) {
-	// console.log("updated");
+	log("updated", DEBUG);
 	let button = BUTTON_MANAGER.getButton(obj.bdaddr);
 	if (button.name != null && button.name != "") {
 		publishButtonTriggers(button);
@@ -267,19 +304,19 @@ BUTTON_MANAGER.on("buttonUpdated", function(obj) {
 });
 
 BUTTON_MANAGER.on("buttonDeleted", function(obj) {
-	console.log("delete");
+	log("delete", DEBUG);
 	deleteButtonTriggers(obj.bdaddr); 
 });
 
 MQTT.on("disconnected", function() {
-	console.log("disconnected");
+	log("disconnected", DEBUG);
 	MQTT.connect();
 });
 
 MQTT.on("error", function(message) {
-	console.log("error: " + message);
+	log("error: " + message, ERROR);
 	setTimeout(function (){
-		console.log("Attempt to reconnect");
+		log("Attempt to reconnect", ERROR);
 		MQTT.connect();
 	}, 1000);
 });
@@ -300,11 +337,11 @@ MQTT.on("publish", function(pub) {
 		try {
 			update = JSON.parse(pub.message);
 		} catch (error) {
-			console.log(`Error parsing ${pub.message}`)
-			console.log(error);
+			log(`Error parsing ${pub.message}`, ERROR);
+			log(error, ERROR);
 		}
 		if ("type" in update && "id" in update && "values" in update) {
-			// console.log(update.type, update.id, JSON.stringify(update.values));
+			log(update.type, update.id, JSON.stringify(update.values), DEBUG);
 			FLICAPP.virtualDeviceUpdateState(update.type, update.id, update.values);
 		}
 	}
