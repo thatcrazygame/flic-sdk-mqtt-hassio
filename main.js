@@ -204,10 +204,23 @@ function deleteButtonTriggers(bdaddr) {
 	let object_id = getObjectID(bdaddr);
 	for (let i = 0; i < ACTIONS.length; i++) {
 		let action = ACTIONS[i][0];
-		let topic = `${DEVICE_AUTOMATION}/${object_id}/${action}/${CONF}`;
-		MQTT.publish(topic, DELETE_MSG, {retain: true});
+		let is_gesture = action.includes("gesture");
+		
+		MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${action}/${CONF}`, DELETE_MSG, {retain: true});
+		
+		if (action != VD_UPDATE) {
+			// Since we only have the bdaddr we don't even know what type of button was deleted
+			// So let's brute force it
+			MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${BIG}-${action}/${CONF}`, DELETE_MSG, {retain: true});
+			MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/${SMALL}-${action}/${CONF}`, DELETE_MSG, {retain: true});
+			if (!is_gesture) {
+				MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/wall-${BIG}-${action}/${CONF}`, DELETE_MSG, {retain: true});
+				MQTT.publish(`${DEVICE_AUTOMATION}/${object_id}/wall-${SMALL}-${action}/${CONF}`, DELETE_MSG, {retain: true});
+			}
+		}
 	}
 }
+
 
 function publishHubFirmware() {
 	MQTT.publish(`${FLICHUB}/${SERIAL}/${FIRMWARE}`, HUB.firmwareVersion, {retain: false});
